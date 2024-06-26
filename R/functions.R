@@ -42,7 +42,7 @@ get_decomposed_beta_pairwise<-function(spp.matrix,index.family,spp.col.start=6){
         
       }#pa
       decomposed$index.family<-index.family
-      decomposed$meta.dat<-spp.matrix[,1:spp.col.start-1]
+      decomposed$meta.dat<-as.data.frame(spp.matrix[,1:spp.col.start-1])
 return(decomposed)
   
 }
@@ -54,16 +54,18 @@ extract_decomposed_beta_start_to_end<-function(decomposed.beta){
   mat.1<-as.matrix(decomposed.beta[[1]])
   mat.2<-as.matrix(decomposed.beta[[2]])
   mat.3<-as.matrix(decomposed.beta[[3]])
-  start.year=decomposed.beta[[5]]
+  start.year<-min(decomposed.beta[[5]]$YEAR)
+  end.year<-max(decomposed.beta[[5]]$YEAR)
+  meta<-decomposed.beta[[5]]%>%select(-YEAR)
   if(decomposed.beta[[4]] %in% c("sorenson",'jaccard')){
-   extracted<-data.frame(start.year=decomposed.beta[[]]) 
+   extracted<-data.frame(meta[1,],start.year=start.year,end.year=end.year,index.family=decomposed.beta[[4]],turnover=mat.1[nrow(mat.1),1],nestedness=mat.2[nrow(mat.2),1],total.disimilarity=mat.3[nrow(mat.3),1]) 
   }#pa
   
   if(decomposed.beta[[4]] %in% c("bray",'ruzicka')){
-   
+    extracted<-data.frame(meta[1,],start.year=start.year,end.year=end.year,index.family=decomposed.beta[[4]],balenced=mat.1[nrow(mat.1),1],unidirectional=mat.2[nrow(mat.2),1],total.disimilarity=mat.3[nrow(mat.3),1]) 
     
   }#pa
-  
+  return(extracted)
   
 }
 
