@@ -13,6 +13,77 @@ get_data_csv<-function(file){
 }
 
 
+clean_and_pivot<-function(data,names.from,values.from,values.fill=0){
+  #For complex/multi data sources, use branching to create multiple targets. Function takes data in long format and returns it in wide format with the removeal of columns that have zero values
+  start.col=length(colnames(data))-1
+  Spp.Mat<-pivot_wider(data,names_from =!! sym(names.from),values_from = !! sym(values.from),values_fill =values.fill)
+  Spp.Meta<-Spp.Mat[,1:start.col]
+  Spp.Count<-Spp.Mat[,start.col:length(colnames(Spp.Mat))]
+  Spp.Count<-Spp.Count[,which(colSums(Spp.Count)>0)]
+  Spp.Mat<-cbind(Spp.Meta,Spp.Count)
+  return(Spp.Mat)
+}
+
+
+get_decomposed_beta_pairwise<-function(spp.matrix,index.family,spp.col.start=6){
+  #Take a species abundance/presence-absence matrix and get the decomposed dissimilarity matrices. Can be supplied as a list of matrices or as a single matrix. Abundance matrix can be supplied even if looking for presence-absence metrics (sorenson, jaccard)
+  #packages: vegan, betapart, tidyverse
+  
+      xmat<-spp.matrix
+      xmat<-xmat[,spp.col.start:length(xmat[1,])]
+      if(index.family %in% c("sorenson",'jaccard')){
+        #convert to presence-absence matrix before passing to betapart
+        xmat<-decostand(xmat,method='pa')
+       decomposed<- beta.pair(xmat,index.family = index.family)
+      }#pa
+    
+      if(index.family %in% c("bray",'ruzicka')){
+        decomposed<- beta.pair.abund(xmat,index.family = index.family)
+        
+      }#pa
+      decomposed$index.family<-index.family
+      decomposed$meta.dat<-spp.matrix[,1:spp.col.start-1]
+return(decomposed)
+  
+}
+
+
+extract_decomposed_beta_start_to_end<-function(decomposed.beta){
+ 
+  #packages
+  mat.1<-as.matrix(decomposed.beta[[1]])
+  mat.2<-as.matrix(decomposed.beta[[2]])
+  mat.3<-as.matrix(decomposed.beta[[3]])
+  start.year=decomposed.beta[[5]]
+  if(decomposed.beta[[4]] %in% c("sorenson",'jaccard')){
+   extracted<-data.frame(start.year=decomposed.beta[[]]) 
+  }#pa
+  
+  if(decomposed.beta[[4]] %in% c("bray",'ruzicka')){
+   
+    
+  }#pa
+  
+  
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
