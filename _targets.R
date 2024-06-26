@@ -5,11 +5,22 @@
 
 # Load packages required to define the pipeline:
 library(targets)
-# library(tarchetypes) # Load other packages as needed.
-
+library(tarchetypes) # Load other packages as needed.
+library(vroom)
+library(tidyverse)
+library(vegan)
+library(betapart)
+library(qs)
 # Set target options:
 tar_option_set(
-  packages = c("tibble") # Packages that your targets need for their tasks.
+  packages = c("tidyverse","vroom","vegan",'betapart'),
+  memory = "transient",
+  garbage_collection = TRUE,
+  format="qs"
+  
+  
+  
+   # Packages that your targets need for their tasks.
   # format = "qs", # Optionally set the default storage format. qs is fast.
   #
   # Pipelines that take a long time to run may benefit from
@@ -45,18 +56,34 @@ tar_option_set(
 )
 
 # Run the R scripts in the R/ folder with your custom functions:
-tar_source()
+tar_source('R/functions.R')
 # tar_source("other_functions.R") # Source other scripts as needed.
-
 # Replace the target list below with your own:
 list(
   tar_target(
-    name = data,
-    command = tibble(x = rnorm(100), y = rnorm(100))
-    # format = "qs" # Efficient storage for general data objects.
+    name=data,
+    command = get_data_csv("Data/BioTIME_Biodiversity_Assessment_NAM.csv")
+   ),
+ 
+  mapped<-tar_map(
+    values=get_data_csv("Data/valuestest.csv"),
+    tar_target(
+    name=spp.matrix,
+    command = clean_and_pivot(data,"Species","ABUNDANCE",0,resamp,assembalgeID),
+   
+   ),
+  tar_target(
+    name=decomposed,
+    command = get_decomposed_beta_pairwise(spp.matrix,index.family = "jaccard",6),
+    
   ),
   tar_target(
-    name = model,
-    command = coefficients(lm(y ~ x, data = data))
+    name=extracted.beta,
+    command = extract_decomposed_beta_start_to_end(decomposed)
   )
+),
+tar_combine(
+  name = combined.beta,
+  mapped[['extracted.beta']]
+)
 )
