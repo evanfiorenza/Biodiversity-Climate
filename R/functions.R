@@ -13,10 +13,12 @@ get_data_csv<-function(file){
 }
 
 
-clean_and_pivot<-function(data,names.from,values.from,values.fill=0){
+clean_and_pivot<-function(data,names.from,values.from,values.fill=0,resamp,assemblageID){
   #For complex/multi data sources, use branching to create multiple targets. Function takes data in long format and returns it in wide format with the removeal of columns that have zero values
+  #Packages: tidyverse
+  data2<-data%>%filter(resamp==resamp & assemblageID==assemblageID)
   start.col=length(colnames(data))-1
-  Spp.Mat<-pivot_wider(data,names_from =!! sym(names.from),values_from = !! sym(values.from),values_fill =values.fill)
+  Spp.Mat<-pivot_wider(data2,names_from =!! sym(names.from),values_from = !! sym(values.from),values_fill =values.fill)
   Spp.Meta<-Spp.Mat[,1:start.col]
   Spp.Count<-Spp.Mat[,start.col:length(colnames(Spp.Mat))]
   Spp.Count<-Spp.Count[,which(colSums(Spp.Count)>0)]
@@ -49,8 +51,8 @@ return(decomposed)
 
 
 extract_decomposed_beta_start_to_end<-function(decomposed.beta){
- 
-  #packages
+ #Extract the start to end pairwise beta values.
+  #packages: tidyverse
   mat.1<-as.matrix(decomposed.beta[[1]])
   mat.2<-as.matrix(decomposed.beta[[2]])
   mat.3<-as.matrix(decomposed.beta[[3]])
