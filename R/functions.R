@@ -13,10 +13,10 @@ get_data_csv<-function(file){
 }
 
 
-clean_and_pivot<-function(data,names.from,values.from,values.fill=0,resamp,assemblageID){
-  #For complex/multi data sources, use branching to create multiple targets. Function takes data in long format and returns it in wide format with the removeal of columns that have zero values
+clean_and_pivot<-function(data,names.from,values.from,values.fill=0,resamp.n,assemblage.ID){
+  #For complex/multi data sources, use branching to create multiple targets. Function takes data in long format and returns it in wide format with the removal of columns that have zero values
   #Packages: tidyverse
-  data2<-data%>%filter(resamp==resamp & assemblageID==assemblageID)
+  data2<-data%>%dplyr::filter(resamp==resamp.n,assemblageID==assemblage.ID)
   start.col=length(colnames(data))-1
   Spp.Mat<-pivot_wider(data2,names_from =!! sym(names.from),values_from = !! sym(values.from),values_fill =values.fill)
   Spp.Meta<-Spp.Mat[,1:start.col]
