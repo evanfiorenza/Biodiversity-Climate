@@ -66,10 +66,10 @@ list(
    ),
  
   mapped<-tar_map(
-    values=get_data_csv("Data/valuestest.csv"),
+    values=get_data_csv("Data/values.csv"),
     tar_target(
     name=spp.matrix,
-    command = clean_and_pivot(data,"Species","ABUNDANCE",0,resamp,assembalgeID),
+    command = clean_and_pivot(data,"Species","ABUNDANCE",0,resamp.n,assemblage.ID),
    
    ),
   tar_target(
