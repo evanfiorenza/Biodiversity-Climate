@@ -1,0 +1,482 @@
+/------------------------------------------------------------------------
+
+// THIS CAN TAKE MANY MINUTES TO WORK - PLEASE BE PATIENT
+
+// Set your scale of extraction
+var extractionScale = 500;
+
+// Set your scales to load images
+var distanceDirectionScale = 10000; // 5000 or 10000
+var distanceNonDirectionScale = 1000; 
+var landWaterScale = 500; // 500m to match land cover - 500m ~ 400 pixels/cell
+var landCoverScale = 500; // 500m ~ 400 pixels/cell
+
+//------------------------------------------------------------------------
+
+// LOAD GRID CELLS
+
+// Load all cells
+var cells = ee.FeatureCollection('projects/ee-webersam/assets/biodiversityassessment/Biotime_Renamed_Gridded_12');
+
+//------------------------------------------------------------------------
+
+// LOAD NON-DIRECTIONAL DISTANCE IMAGES - EXPORTED FROM A DIFFERENT SCRIPT TO SAVE TIME, REDUCE COMPUTATIONAL TIME OUTS
+
+// Load individual distance images
+var coastlineNonDirectionalDistance = ee.Image('projects/ee-webersam/assets/biodiversityassessment/Biotime_Distances_Kilometers_NonDirectional_Coastline_' + distanceNonDirectionScale);
+var terrestrialEcoregionNonDirectionalDistance = ee.Image('projects/ee-webersam/assets/biodiversityassessment/Biotime_Distances_Kilometers_NonDirectional_Terrestrial_Ecoregions_' + distanceNonDirectionScale);
+var marineEcoregionNonDirectionalDistance = ee.Image('projects/ee-webersam/assets/biodiversityassessment/Biotime_Distances_Kilometers_NonDirectional_Marine_Ecoregions_' + distanceNonDirectionScale);
+
+// Create on image overall distance image
+var nondirectionalDistance = coastlineNonDirectionalDistance
+  .addBands(terrestrialEcoregionNonDirectionalDistance)
+  .addBands(marineEcoregionNonDirectionalDistance);
+
+print('----------------------');
+print('NON-DIRECTIONAL DISTANCE');
+print('Non-Directional Distance Image', nondirectionalDistance);
+print('Non-Directional Distance Scale', distanceNonDirectionScale);
+
+// Get cells values for distances
+var nondirectionalDistanceRR = nondirectionalDistance.reduceRegions(cells, ee.Reducer.mean(), extractionScale);
+
+print('Non-Directional Distance Reduce Regions', nondirectionalDistanceRR.size());
+
+//------------------------------------------------------------------------
+
+// LOAD DIRECTIONAL DISTANCE IMAGES
+
+// Load individual distance images
+var coastlineDirectionalDistance = ee.Image('projects/ee-webersam/assets/biodiversityassessment/Biotime_Distances_Kilometers_Directional_Coastline_' + distanceDirectionScale);
+var terrestrialEcoregionDirectionalDistance = ee.Image('projects/ee-webersam/assets/biodiversityassessment/Biotime_Distances_Kilometers_Directional_Terrestrial_Ecoregions_' + distanceDirectionScale);
+var marineEcoregionDirectionalDistance = ee.Image('projects/ee-webersam/assets/biodiversityassessment/Biotime_Distances_Kilometers_Directional_Marine_Ecoregions_' + distanceDirectionScale);
+
+// Create on image overall distance image
+var directionalDistance = coastlineDirectionalDistance
+  .addBands(terrestrialEcoregionDirectionalDistance)
+  .addBands(marineEcoregionDirectionalDistance);
+
+print('----------------------');
+print('DIRECTIONAL DISTANCE');
+print('Directional Distance Image', directionalDistance);
+print('Directional Distance Scale', distanceDirectionScale);
+
+// Get cells values for distances
+var directionalDistanceRR = directionalDistance.reduceRegions(cells, ee.Reducer.mean(), extractionScale);
+
+print('Directional Distance Reduce Regions', directionalDistanceRR.size());
+
+//------------------------------------------------------------------------
+
+// LOAD ELEVATION AND BATHYMETRY IMAGE
+
+// Load elevation and bathymetry image
+var elevation = ee.Image('NOAA/NGDC/ETOPO1')
+  .select('bedrock')
+  .rename('Elevation_Bathymetry');
+
+// Get scale
+var elevationScale = elevation
+  .projection()
+  .nominalScale();
+
+print('----------------------');
+print('ELEVATION');
+print('Elevation and Bathymetry Image', elevation);
+print('Elevation and Bathymetry Scale', elevationScale);
+
+// Get cells values for elevation and bathymetry
+// Rename and move cell column to the front
+var elevationRR = elevation
+  .reduceRegions(cells, ee.Reducer.mean(), extractionScale)
+  .map(function(f) {return f.select(['cell', 'mean'], ['cell', 'Elevation_Bathymetry'])});
+
+print('Elevation Reduce Regions', elevationRR.size());
+
+//------------------------------------------------------------------------
+
+// LAND WATER CLASSIFICATION
+
+// To use to clip coastlines
+var countries = ee.FeatureCollection('USDOS/LSIB/2017');
+
+// Get terrestrial water from JRC
+// Keep binary to use as a mask for land
+var terrestrialWater = ee.Image(0)
+  .blend(
+  ee.Image('JRC/GSW1_4/GlobalSurfaceWater')
+    .select('occurrence')
+    .gte(10)
+    .multiply(0)
+    .add(1)
+  )
+  .clip(countries);
+  
+// If it's inside the countries, land
+var land = ee.Image(1)
+  .clipToCollection(countries)
+  .updateMask(terrestrialWater.eq(0));
+
+// Get just water
+terrestrialWater = terrestrialWater.selfMask();
+
+// If it's not land of terrestrial water, ocean
+var oceanWater = ee.Image(1)
+  .blend(land.multiply(0))
+  .blend(terrestrialWater.multiply(0))
+  .selfMask();
+
+// Combine into one multi-band image
+var landWater = terrestrialWater.rename('terrestrialWater')
+  .addBands(land.rename('land'))
+  .addBands(oceanWater.rename('oceanWater'));
+  
+print('----------------------');
+print('LAND WATER CLASSIFICATION');
+print('Land Water Classification Image', landWater);
+print('Land Water Classification Scale', landWaterScale);
+
+// Calculate the percent of pixels in each class
+var landWaterPercents = function(f) {
+  
+  // Get the individual numbers
+  var land = ee.Number(f.get('land'));
+  var terrestrialWater = ee.Number(f.get('terrestrialWater'));
+  var oceanWater = ee.Number(f.get('oceanWater'));
+  
+  // Total pixel count
+  var total = land.add(terrestrialWater).add(oceanWater);
+  
+  // Percent of total pixel count
+  var percentLand = land.divide(total).multiply(100);
+  var percentTerrestrialWater = terrestrialWater.divide(total).multiply(100);
+  var percentOceanWater = oceanWater.divide(total).multiply(100);
+
+  // Assign values and return 
+  // Make names match style of land cover
+  var fPercent = f
+    .set('Percent Land', percentLand)
+    .set('Percent Terrestrial Water', percentTerrestrialWater)
+    .set('Percent Ocean Water', percentOceanWater);
+  
+  return(fPercent);
+};
+
+// Get cell pixel counts and percentages for land and water classifications
+var landWaterRR = landWater
+  .reduceRegions(cells, ee.Reducer.count(), extractionScale)
+  .map(landWaterPercents);
+
+print('Land Water Classification Reduce Regions', landWaterRR.size());
+
+//------------------------------------------------------------------------
+
+// LAND COVER CLASSIFICATION
+
+// Evan could always aggregate these classes
+var lgbpDictionary = ee.Dictionary({
+
+  1:	'Evergreen Needleleaf Forests',
+  2:	'Evergreen Broadleaf Forests',
+  3:	'Deciduous Needleleaf Forests',
+  4:	'Deciduous Broadleaf Forests',
+  5:	'Mixed Forests',
+  6:	'Closed Shrublands',
+  7:	'Open Shrublands',
+  8:	'Woody Savannas',
+  9:	'Savannas',
+  10: 'Grasslands',
+  11: 'Permanent Wetlands',
+  12: 'Croplands',
+  13: 'Urban and Built-up Lands',
+  14: 'Cropland/Natural Vegetation Mosaics',
+  15: 'Permanent Snow and Ice',
+  16: 'Barren',
+  17: 'Water Bodies'
+});
+
+// Get the most common land cover type for the 22 years
+// Blend ocean (17) in the gaps
+var lc = ee.Image(17).blend(
+  ee.ImageCollection('MODIS/061/MCD12Q1')
+    .select('LC_Type1')
+    .mode());
+
+// Convert each land cover class to a seperate band
+var valuesToBands = function(index) {
+
+  // Get a band with just the values of the land cover
+  var band = lc.updateMask(lc.eq(ee.Number(index).int()));
+  
+  // Get the name of the land cover class from the dictionary
+  var bandName = ee.String(lgbpDictionary.get(ee.Number(index).format('%.0f'))); 
+  
+  // Update band with band name
+  return(band.rename(bandName));
+};
+
+// For each dictionary name, concert to separate band
+// Insert a blank image just so the names stay right when using .toBands()
+// And keeps track of total count of all pixels
+var lcBands = ee.ImageCollection(
+  ee.List.sequence(1, lgbpDictionary.size(), 1).map(valuesToBands)
+  .insert(0, ee.Image(0).rename('Total')))
+  .toBands();
+
+// Get names for iterating percentage calculations
+var lcBandsNames = lcBands.bandNames();
+
+print('----------------------');
+print('LAND COVER CLASSIFICATION');
+print('Land Cover Classification Image', lcBands);
+print('Land Cover Classification Scale', landCoverScale);
+
+// Get the percentage of pixels in each land use category
+var landCoverPercentages = function(f) {
+
+  // Get the total number of pixels
+  var total = ee.Number(f.get(lcBandsNames.get(0)));
+  
+  // Convery band name properties to an array
+  // Do math to get percents
+  var fValues = f
+    .toArray(lcBandsNames)
+    .divide(total)
+    .multiply(100)
+    .toList();
+  
+  // Add percent to the column names
+  var lcBandsNamesPercent = lcBandsNames.map(function(item) {return(ee.String('Percent ').cat(ee.String(item)))});
+  
+  // Convert back to dictionary to append to properties
+  var fDict = ee.Dictionary.fromLists(lcBandsNamesPercent, fValues);
+  
+  return(f.set(fDict));  
+};
+
+// Get cell pixel counts and percentages for land cover classifications
+var landCoverRR = lcBands
+  .reduceRegions(cells, ee.Reducer.count(), extractionScale)
+  .map(landCoverPercentages);
+
+print('Land Cover Mode Classification Reduce Regions', landCoverRR.size());
+
+//------------------------------------------------------------------------
+
+// LOAD ANNUAL MEAN TERRESTRIAL TEMPERATURES
+
+// Load terretrial temperature climate and select annual mean temperature band
+var annualMeanTemperatureTerrestrial = ee.Image('WORLDCLIM/V1/BIO')
+  .select('bio01')
+  .multiply(0.1);
+
+// Get scale
+var annualMeanTemperatureTerrestrialScale = annualMeanTemperatureTerrestrial
+  .projection()
+  .nominalScale();
+
+print('----------------------');
+print('ANNUAL MEAN TEMPERATURE TERRESTRIAL');
+print('Annual Mean Temperature Terrestrial Image', annualMeanTemperatureTerrestrial);
+print('Annual Mean Temperature Terrestrial Scale', annualMeanTemperatureTerrestrialScale);
+
+// Get cells values for terrestrial baseline temperatires
+// Rename and move cell column to the front
+var annualMeanTemperatureTerrestrialRR = annualMeanTemperatureTerrestrial
+  .reduceRegions(cells, ee.Reducer.mean(), extractionScale)
+  .filter(ee.Filter.notNull(['mean'])) // Have to filter out cells without values
+  .map(function(f) {return f.select(['cell', 'mean'], ['cell', 'Annual_Temp_Mean_Terrestrial'])});
+
+print('Annual Mean Temperature Terrestrial Regions', annualMeanTemperatureTerrestrialRR.size());
+
+//------------------------------------------------------------------------
+
+// LOAD ANNUAL MEAN MARINE TEMPERATURES
+
+// Load terretrial temperature climate and select annual mean temperature band
+var annualMeanTemperatureMarine = ee.Image('projects/ee-webersam/assets/biodiversityassessment/Global_2000-2014_SurfaceTemperatureMean_BioOracle2')
+  .rename('Annual_Temp_Mean_Marine');
+
+// Get scale
+var annualMeanTemperatureMarineScale = annualMeanTemperatureMarine
+  .projection()
+  .nominalScale();
+
+print('----------------------');
+print('ANNUAL MEAN TEMPERATURE MARINE');
+print('Annual Mean Temperature Marine Image', annualMeanTemperatureMarine);
+print('Annual Mean Temperature Marine Scale', annualMeanTemperatureMarineScale);
+
+// Get cells values for marine baseline temperatires
+// Rename and move cell column to the front
+var annualMeanTemperatureMarineRR = annualMeanTemperatureMarine
+  .reduceRegions(cells, ee.Reducer.mean(), extractionScale)
+  .filter(ee.Filter.notNull(['mean'])) // Have to filter out cells without values
+  .map(function(f) {return f.select(['cell', 'mean'], ['cell', 'Annual_Temp_Mean_Marine'])});
+
+print('Annual Mean Temperature Marine Regions', annualMeanTemperatureMarineRR.size());
+
+//------------------------------------------------------------------------
+
+// ADD TO MAP
+
+// Create distance viz
+var distanceViz = {
+  min: 0,
+  max: 1000,
+  palette: ['#543005','#8c510a','#bf812d','#dfc27d','#f6e8c3','#f5f5f5','#c7eae5','#80cdc1','#35978f','#01665e','#003c30']
+};
+
+// Create elevation and bathymetry viz
+var elevationViz = {
+  min: -7000,
+  max: 3000,
+  palette: ['011de2', 'afafaf', '3603ff', 'fff477', 'b42109'],
+};
+
+// LC viz
+var landCoverViz = {
+  min: 1,
+  max: 17,
+  palette: [
+    '05450a', '086a10', '54a708', '78d203', '009900', 'c6b044', 'dcd159',
+    'dade48', 'fbff13', 'b6ff05', '27ff87', 'c24f44', 'a5a5a5', 'ff6d4c',
+    '69fff8', 'f9ffa4', '1c0dff'
+  ],
+};
+
+// Temperature viz
+var temperatureViz = {
+  min: -23,
+  max: 30,
+  palette: ['blue', 'purple', 'cyan', 'green', 'yellow', 'red'],
+};
+
+// Precipitation viz
+var precipViz = {
+  min: 10,
+  max: 200,
+  palette: ee.List(['#d73027','#f46d43','#fdae61','#fee08b','#ffffbf','#d9ef8b','#a6d96a','#66bd63','#1a9850']).reverse().getInfo(),
+};
+
+Map.setOptions('SATELLITE');
+
+// Land water layers
+Map.addLayer(landWater.select('oceanWater'), {palette: 'navy'}, 'Ocean');
+Map.addLayer(landWater.select('land'), {palette: '#1c9111'}, 'Land');
+Map.addLayer(landWater.select('terrestrialWater'), {palette: '#97ccf7'}, 'Terrestrial Water');
+
+// Distance layers
+Map.addLayer(nondirectionalDistance, {min: 0, max: 1000}, 'Non-Directional Distance');
+Map.addLayer(directionalDistance.select([0, 4, 8]), {min: 0, max: 1000}, 'Directional Distance');
+
+// Elevation and bathymetry layer
+Map.addLayer(elevation, elevationViz, 'Elevation and Bathymetry');
+
+// Land cover layer
+Map.addLayer(lc, landCoverViz, 'Land Cover Mode');
+
+// Terrestrial annual temperature layer
+Map.addLayer(annualMeanTemperatureTerrestrial, temperatureViz, 'Annual Mean Temperature Terrestrial');
+
+// Marine annual temperature layer
+Map.addLayer(annualMeanTemperatureMarine, temperatureViz, 'Annual Mean Temperature Marine');
+
+// Selected cells
+Map.addLayer(ee.Image().paint(cells, 1, 1), {palette: 'black'}, 'Selected Cells');
+
+//------------------------------------------------------------------------
+
+// EXPORT CSVS TO DRIVE
+
+var exportCSV = function(fc, description, selectors) {
+  
+  Export.table.toDrive({
+    collection: fc.sort('cell'),
+    description: description,
+    fileFormat: 'CSV',
+    selectors: selectors.getInfo() //  Gets rid of system:index and .geo columns
+  });  
+};
+
+// Get selectors from the properties of each reduce regions
+// Removing system:index and .geo from features, moving cell to front
+var getSelectors = function(fc) {
+
+  var selectors = fc
+    .first()
+    .propertyNames()
+    .remove('cell')
+    .remove('system:index')
+    .sort();
+    
+  return(selectors.insert(0, 'cell'));
+};
+
+// Get some metadata for better names when exporting
+var cellsAllString = 'projects/ee-webersam/assets/biodiversityassessment/Biotime_Renamed_Gridded_12';
+var cellType = 'All'; // Using all cells, not just filtered subsets
+
+// Get cell file name
+var cellsAllStringSplit = ee.List(cellsAllString.split('/'));
+
+// Get the string after the last /
+var cellsAllStringExport = cellsAllStringSplit
+  .get(cellsAllStringSplit.length().subtract(1))
+  .getInfo();
+
+// Print the final selectors for each reduce regions
+print('EXPORT SELETORS');
+print('Non-Directional Distance Selectors', getSelectors(nondirectionalDistanceRR));
+print('Directional Distance Selectors', getSelectors(directionalDistanceRR));
+print('Elevations Selectors', getSelectors(elevationRR));
+print('Land Water Selectors', getSelectors(landWaterRR));
+print('Land Cover Selectors', getSelectors(landCoverRR));
+print('Annual Mean Temperature Terrestrial Selectors', getSelectors(annualMeanTemperatureTerrestrialRR));
+print('Annual Mean Temperature Marine Selectors', getSelectors(annualMeanTemperatureMarineRR));
+print('----------------------');
+
+// Export keeping track of all parameters and files used
+exportCSV(
+  nondirectionalDistanceRR,
+  cellsAllStringExport + '_Non_Directional_Distance_' + cellType + '_' + distanceNonDirectionScale,
+  getSelectors(nondirectionalDistanceRR)
+);
+
+exportCSV(
+  directionalDistanceRR,
+  cellsAllStringExport + '_Directional_Distance_' + cellType + '_' + distanceDirectionScale,
+  getSelectors(directionalDistanceRR)
+);
+
+exportCSV(
+  elevationRR,
+  cellsAllStringExport  + '_Elevation_Bathymetry_' + cellType + '_' + elevationScale.round().getInfo(),
+  getSelectors(elevationRR)
+);
+
+exportCSV(
+  landWaterRR,
+  cellsAllStringExport  + '_Land_Water_' + cellType + '_' + landWaterScale,
+  getSelectors(landWaterRR)
+);
+
+exportCSV(
+  landCoverRR,
+  cellsAllStringExport  + '_Land_Cover_' + cellType + '_' + landCoverScale,
+  getSelectors(landCoverRR)
+);
+
+exportCSV(
+  annualMeanTemperatureTerrestrialRR,
+  cellsAllStringExport  + '_Annual_Temp_Mean_Terrestrial_' + cellType + '_' + annualMeanTemperatureTerrestrialScale.round().getInfo(),
+  getSelectors(annualMeanTemperatureTerrestrialRR)
+);
+
+exportCSV(
+  annualMeanTemperatureMarineRR,
+  cellsAllStringExport  + '_Annual_Temp_Mean_Marine_' + cellType + '_' + annualMeanTemperatureMarineScale.round().getInfo(),
+  getSelectors(annualMeanTemperatureMarineRR)
+);
+
+//------------------------------------------------------------------------

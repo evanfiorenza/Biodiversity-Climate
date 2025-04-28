@@ -6,17 +6,31 @@
 # Load packages required to define the pipeline:
 library(targets)
 library(tarchetypes) # Load other packages as needed.
-library(vroom)
 library(tidyverse)
 library(vegan)
 library(betapart)
 library(qs)
+library(crew)
+library(breakaway)
+
+#Configure Parallel Controller
+controller <- crew::crew_controller_local(
+  name = "my_controller",
+  workers = 5
+)
+
+
+
 # Set target options:
 tar_option_set(
-  packages = c("tidyverse","vroom","vegan",'betapart'),
+  packages = c("tidyverse","vegan","betapart","glmmTMB","breakaway","crew","qs"),
   memory = "transient",
   garbage_collection = TRUE,
-  format="qs"
+  format="qs",
+  error="null",
+  controller=controller,
+  storage = "worker",
+  retrieval = "worker"
   
   
   
@@ -61,20 +75,31 @@ tar_source('R/functions.R')
 # Replace the target list below with your own:
 list(
   tar_target(
-    name=data,
-    command = get_data_csv("Data/BioTIME_Biodiversity_Assessment_NAM.csv")
-   ),
- 
-  mapped<-tar_map(
-    values=get_data_csv("Data/values.csv"),
-    tar_target(
-    name=spp.matrix,
-    command = clean_and_pivot(data,"Species","ABUNDANCE",0,resamp.n,assemblage.ID),
-   
+    name=BioTime.data,
+    command = get_data_csv("Data/Biotime_Renamed_Gridded_12_Filtered.csv")
    ),
   tar_target(
+    name=BioTime.data2,
+    command = group_data_csv(BioTime.data)
+  ),
+  mapped<-tar_map(
+    values=get_data_csv("Data/Values_AssemblageID.csv"),
+    tar_target(
+    name=spp.matrix,
+    command = clean_and_pivot(BioTime.data2,"Species","ABUNDANCE",0,assemblage.ID),
+   
+   ),
+ #  tar_target(
+  #   name=alpha.table,
+  #  command=get_alpha_div_metrics(spp.matrix,10)
+  # ),
+  # tar_target(
+  #   name=alpha.trends,
+  #   command=get_alpha_div_trends(alpha.table)
+  # ),
+  tar_target(
     name=decomposed,
-    command = get_decomposed_beta_pairwise(spp.matrix,index.family = "jaccard",6),
+    command = get_decomposed_beta_pairwise(spp.matrix,index.family = "jaccard",10),
     
   ),
   tar_target(
@@ -85,5 +110,15 @@ list(
 tar_combine(
   name = combined.beta,
   mapped[['extracted.beta']]
+)#,
+#tar_combine(
+#  name = combined.alpha,
+#  mapped[['alpha.trends']]
+#)
 )
-)
+
+
+
+
+
+
