@@ -13,6 +13,8 @@ library(qs)
 library(crew)
 library(breakaway)
 
+#What happens if I make edits from github on online version of vscode?
+
 #Configure Parallel Controller
 controller <- crew::crew_controller_local(
   name = "my_controller",
