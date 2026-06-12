@@ -22,3 +22,4 @@ Scripts should be run in the following order with the platform in ():
   
   5- Analysis of turnover (R)
 
+[![DOI](https://zenodo.org/badge/813230897.svg)](https://doi.org/10.5281/zenodo.20672579)
