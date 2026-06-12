@@ -11,9 +11,14 @@ Terrestrial Ecoregions: https://databasin.org/datasets/68635d7c77f1475f9b6c1d1db
 Analyses on Google Earth Engine will require upload of shapefiles to generate distances to ecoregion boundaries.
 
 Scripts should be run in the following order with the platform in ():
+
   1- Biodiversity Assessment Filtering BioTIME Data and Grids (R)
+  
   2- Biodiversity Assessment Modeling Temperature and Precipitation Trends (R)
+  
   3- Biodiversity Assessment Extract Cell Data (Google Earth Engine Code Editor)
+  
   4- Run _targets file using targets::tar_make() (R)
+  
   5- Analysis of turnover (R)
 
